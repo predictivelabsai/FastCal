@@ -1,0 +1,14 @@
+services:
+  fastcal:
+    build: .
+    ports: ["5021:5021"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      FASTCAL_DB: /data/fastcal.sqlite
+      FASTCAL_SECRET: ${FASTCAL_SECRET:?Set FASTCAL_SECRET}
+      FASTOFFICE_SSO_SECRET: ${FASTOFFICE_SSO_SECRET:?Set FASTOFFICE_SSO_SECRET}
+    volumes: [fastcal-data:/data]
+volumes:
+  fastcal-data:
