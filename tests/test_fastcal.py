@@ -1,71 +1,95 @@
-from datetime import datetime, timedelta
+from __future__ import annotations
 
-import pytest
+from datetime import UTC, date, datetime, time
+
 from starlette.testclient import TestClient
 
-
-@pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("FASTCAL_DB", str(tmp_path / "fastcal.sqlite"))
-    monkeypatch.setenv("FASTCAL_DEV_LOGIN", "true")
-    import importlib
-    import db
-    import app
-    importlib.reload(db)
-    importlib.reload(app)
-    return TestClient(app.app)
+from fastcal.domain.slots import (
+    Override,
+    Rule,
+    Window,
+    candidate_slots,
+    remove_conflicts,
+    round_robin_order,
+)
 
 
-def login(client):
-    response = client.post("/auth/dev", data={"email": "kaljuvee@gmail.com"}, follow_redirects=True)
-    assert response.status_code == 200
+def test_public_landing_health_and_api_contract():
+    from app import app
 
-
-def test_public_landing_and_health(client):
+    client = TestClient(app)
     assert "Make time work for everyone" in client.get("/").text
-    assert client.get("/health").json() == {"status": "ok", "product": "FastCal"}
+    assert client.get("/health").json()["status"] == "ok"
+    assert client.get("/api/v1/health").json()["product"] == "FastCal"
+    paths = client.get("/api/openapi.json").json()["paths"]
+    assert "/v1/event-types/{organisation_slug}/{event_type_slug}/slots" in paths
+    assert "/v1/bookings" in paths
 
 
-def test_event_crud_is_authenticated(client):
-    assert client.get("/events/new", follow_redirects=False).status_code == 303
-    login(client)
-    page = client.get("/events/new")
-    assert "Schedule time" in page.text
+def test_weekly_slots_are_timezone_and_dst_safe():
+    slots = candidate_slots(
+        timezone="Europe/Tallinn",
+        rules=[Rule(0, time(9), time(11))],
+        overrides=[],
+        duration_minutes=30,
+        interval_minutes=30,
+        range_start=datetime(2026, 10, 25, tzinfo=UTC),
+        range_end=datetime(2026, 10, 27, tzinfo=UTC),
+        minimum_notice_minutes=0,
+        now=datetime(2026, 10, 24, tzinfo=UTC),
+    )
+    assert len(slots) == 4
+    assert slots[0].starts_at.utcoffset().total_seconds() == 2 * 3600
+    assert slots[0].starts_at.hour == 9
 
 
-def test_public_booking_creates_tenant_event(client):
-    login(client)
-    response = client.post("/booking-pages", data={
-        "title": "Discovery call", "duration_minutes": "30", "available_from": "00:00",
-        "available_to": "23:59", "timezone": "Europe/Tallinn", "minimum_notice_hours": "0",
-        "buffer_minutes": "0", "location": "FastMeet",
-    }, follow_redirects=True)
-    assert "Discovery call" in response.text
-    slug = response.url.path.rsplit("/", 1)[-1]
-    import db
-    page = db.booking_page(slug)
-    import app
-    slots = app.available_slots(page)
-    assert slots
-    slot = slots[0]
-    booked = client.post(f"/book/{slug}", data={
-        "guest_name": "Outside Guest", "guest_email": "guest@example.com",
-        "starts_at": slot["starts_at"], "ends_at": slot["ends_at"], "guest_notes": "Planning",
-    }, follow_redirects=True)
-    assert "confirmed" in booked.text
-    assert any("Outside Guest" in row["title"] for row in db.events(page["organisation_id"]))
+def test_date_override_replaces_weekly_rule():
+    monday = date(2026, 8, 10)
+    slots = candidate_slots(
+        timezone="Europe/Tallinn",
+        rules=[Rule(0, time(9), time(17))],
+        overrides=[Override(monday, True, time(13), time(14))],
+        duration_minutes=30,
+        interval_minutes=30,
+        range_start=datetime(2026, 8, 9, tzinfo=UTC),
+        range_end=datetime(2026, 8, 11, tzinfo=UTC),
+        minimum_notice_minutes=0,
+        now=datetime(2026, 8, 8, tzinfo=UTC),
+    )
+    assert [slot.starts_at.hour for slot in slots] == [13, 13]
+    assert [slot.starts_at.minute for slot in slots] == [0, 30]
 
 
-def test_booking_page_is_tenant_scoped(client):
-    login(client)
-    import db
-    who = {"sub": "other", "email": "other@example.com", "name": "Other",
-           "org_id": "other-org", "org_name": "Other Org", "role": "owner"}
-    db.provision(who)
-    with db.connect() as con:
-        first_org = con.execute("SELECT organisation_id FROM calendars WHERE organisation_id='dev'").fetchone()
-    with pytest.raises(ValueError):
-        db.create_event(who, {
-            "calendar_id": 1, "title": "Cross-tenant", "starts_at": "2026-08-01T10:00",
-            "ends_at": "2026-08-01T10:30",
-        })
+def test_conflict_buffers_remove_adjacent_slot():
+    slots = [
+        Window(
+            datetime(2026, 8, 10, 8, tzinfo=UTC),
+            datetime(2026, 8, 10, 8, 30, tzinfo=UTC),
+        ),
+        Window(
+            datetime(2026, 8, 10, 8, 30, tzinfo=UTC),
+            datetime(2026, 8, 10, 9, tzinfo=UTC),
+        ),
+    ]
+    busy = [
+        Window(
+            datetime(2026, 8, 10, 9, tzinfo=UTC),
+            datetime(2026, 8, 10, 9, 30, tzinfo=UTC),
+        )
+    ]
+    remaining = remove_conflicts(
+        slots, busy, before_buffer_minutes=0, after_buffer_minutes=15
+    )
+    assert remaining == [slots[0]]
+
+
+def test_round_robin_prefers_priority_then_weighted_share_then_oldest():
+    recent = datetime(2026, 8, 9, tzinfo=UTC)
+    old = datetime(2026, 8, 1, tzinfo=UTC)
+    candidates = [
+        ("low-priority", 0, 100, 0, None),
+        ("alice", 10, 100, 2, recent),
+        ("bob", 10, 200, 2, recent),
+        ("carol", 10, 100, 1, old),
+    ]
+    assert round_robin_order(candidates) == ["carol", "bob", "alice"]

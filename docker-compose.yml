@@ -1,14 +1,33 @@
 services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: fastcal
+      POSTGRES_USER: fastcal
+      POSTGRES_PASSWORD: fastcal
+    volumes:
+      - fastcal-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fastcal -d fastcal"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   fastcal:
     build: .
     ports: ["5021:5021"]
-    env_file:
-      - path: .env
-        required: false
     environment:
-      FASTCAL_DB: /data/fastcal.sqlite
-      FASTCAL_SECRET: ${FASTCAL_SECRET:?Set FASTCAL_SECRET}
-      FASTOFFICE_SSO_SECRET: ${FASTOFFICE_SSO_SECRET:?Set FASTOFFICE_SSO_SECRET}
-    volumes: [fastcal-data:/data]
+      DB_URL: postgresql://fastcal:fastcal@database:5432/fastcal
+      DB_SCHEMA: fast_cal
+      FASTCAL_ENV: development
+      FASTCAL_PUBLIC_URL: http://localhost:5021
+      FASTCAL_SECRET: local-development-secret
+      FASTCAL_ENCRYPTION_KEY: local-development-encryption-key
+      FASTCAL_DEV_LOGIN: "true"
+      FASTOFFICE_URL: http://host.docker.internal:5020
+    depends_on:
+      database:
+        condition: service_healthy
+
 volumes:
-  fastcal-data:
+  fastcal-postgres:

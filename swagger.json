@@ -1,6 +1,80 @@
 {
   "components": {
     "schemas": {
+      "BookingCreate": {
+        "properties": {
+          "attendees": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Attendees",
+            "type": "array"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "event_type_slug": {
+            "title": "Event Type Slug",
+            "type": "string"
+          },
+          "guest_email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Guest Email",
+            "type": "string"
+          },
+          "guest_name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Guest Name",
+            "type": "string"
+          },
+          "guest_timezone": {
+            "default": "Europe/Tallinn",
+            "title": "Guest Timezone",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "organisation_slug": {
+            "title": "Organisation Slug",
+            "type": "string"
+          },
+          "responses": {
+            "additionalProperties": true,
+            "title": "Responses",
+            "type": "object"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organisation_slug",
+          "event_type_slug",
+          "starts_at",
+          "ends_at",
+          "guest_name",
+          "guest_email"
+        ],
+        "title": "BookingCreate",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -56,91 +130,53 @@
       }
     },
     "securitySchemes": {
-      "FastOffice tenant grant": {
+      "HTTPBearer": {
         "scheme": "bearer",
         "type": "http"
       }
     }
   },
   "info": {
-    "description": "Tenant-scoped calendars, events, booking pages and scheduling interoperability.",
+    "description": "Team scheduling, availability, round-robin assignment, and public bookings.",
     "title": "FastCal API",
-    "version": "1.0.0"
+    "version": "0.2.0"
   },
   "openapi": "3.1.0",
   "paths": {
-    "/v1/booking-pages": {
+    "/v1/bookings": {
       "get": {
-        "operationId": "list_booking_pages_v1_booking_pages_get",
+        "operationId": "list_bookings_v1_bookings_get",
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "FastOffice tenant grant": []
-          }
-        ],
-        "summary": "List Booking Pages"
-      }
-    },
-    "/v1/events": {
-      "get": {
-        "operationId": "list_events_v1_events_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "q",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Q",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "additionalProperties": true,
+                  "title": "Response List Bookings V1 Bookings Get",
+                  "type": "object"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Successful Response"
           }
         },
         "security": [
           {
-            "FastOffice tenant grant": []
+            "HTTPBearer": []
           }
         ],
-        "summary": "List Events"
+        "summary": "List Bookings",
+        "tags": [
+          "Bookings"
+        ]
       },
       "post": {
-        "operationId": "create_event_v1_events_post",
+        "operationId": "post_booking_v1_bookings_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
-                "title": "Payload",
-                "type": "object"
+                "$ref": "#/components/schemas/BookingCreate"
               }
             }
           },
@@ -150,7 +186,11 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Booking V1 Bookings Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -166,24 +206,96 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "FastOffice tenant grant": []
-          }
-        ],
-        "summary": "Create Event"
+        "summary": "Post Booking",
+        "tags": [
+          "Bookings"
+        ]
       }
     },
-    "/v1/events/{item_id}": {
+    "/v1/event-types/{organisation_slug}/{event_type_slug}": {
       "get": {
-        "operationId": "get_event_v1_events__item_id__get",
+        "operationId": "get_event_type_v1_event_types__organisation_slug___event_type_slug__get",
         "parameters": [
           {
             "in": "path",
-            "name": "item_id",
+            "name": "organisation_slug",
             "required": true,
             "schema": {
-              "title": "Item Id",
+              "title": "Organisation Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_type_slug",
+            "required": true,
+            "schema": {
+              "title": "Event Type Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Event Type V1 Event Types  Organisation Slug   Event Type Slug  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Event Type",
+        "tags": [
+          "Event types"
+        ]
+      }
+    },
+    "/v1/event-types/{organisation_slug}/{event_type_slug}/slots": {
+      "get": {
+        "operationId": "get_slots_v1_event_types__organisation_slug___event_type_slug__slots_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organisation_slug",
+            "required": true,
+            "schema": {
+              "title": "Organisation Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_type_slug",
+            "required": true,
+            "schema": {
+              "title": "Event Type Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 21,
+              "maximum": 60,
+              "minimum": 1,
+              "title": "Days",
               "type": "integer"
             }
           }
@@ -192,7 +304,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Slots V1 Event Types  Organisation Slug   Event Type Slug  Slots Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -208,12 +324,10 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "FastOffice tenant grant": []
-          }
-        ],
-        "summary": "Get Event"
+        "summary": "Get Slots",
+        "tags": [
+          "Availability"
+        ]
       }
     },
     "/v1/health": {
@@ -223,19 +337,28 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health V1 Health Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
           }
         },
-        "summary": "Health"
+        "summary": "Health",
+        "tags": [
+          "System"
+        ]
       }
     }
   },
   "servers": [
     {
-      "url": "https://calendar.fastsme.com/api"
+      "url": "https://cal.fastsme.com/api"
     }
   ]
 }
