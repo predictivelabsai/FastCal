@@ -622,3 +622,10 @@ def post(token: str, reason: str = ""):
 
 
 register_seo_routes(app)
+
+# FastHTML installs a catch-all static-file route before application routes.
+# Keep the generated favicon ahead of that route so browsers receive the SVG.
+for index, route in enumerate(app.routes):
+    if getattr(route, "path", None) == "/favicon.ico":
+        app.routes.insert(0, app.routes.pop(index))
+        break
